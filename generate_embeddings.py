@@ -1,121 +1,121 @@
 import os
 from pymongo import MongoClient
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-import numpy as np
+from dotenv import load_dotenv
 
-# --- Configuration ---
-# NOTE: Replace with your actual key and URI.
-GOOGLE_API_KEY = "AIzaSyDBZymorU4KO-vh_E3nDlk6-sXnmflPf8U"
-MONGODB_URI = "mongodb+srv://moraisgoncalo365_db_user:YzvStBWHLMxeQ8qF@capstone-project.ykhbgmr.mongodb.net/?appName=Capstone-Project"
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
 
-# --- Initialize LangChain with Google Generative AI Embeddings ---
+load_dotenv()  # reads .env if present
+
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+MONGODB_URI = os.getenv("MONGODB_URI")
+
+if not GOOGLE_API_KEY:
+    raise RuntimeError("GOOGLE_API_KEY not found in environment variables.")
+
+if not MONGODB_URI:
+    raise RuntimeError("MONGODB_URI not found in environment variables.")
+
+# ============================================================
+# CONSTANTS
+# ============================================================
+
+DB_NAME = "HealthMatch"
+COLLECTION_NAME = "Health Dictionary"
+EMBEDDING_MODEL = "models/text-embedding-004"
+
+# ============================================================
+# EMBEDDINGS
+# ============================================================
+
 def initialize_embeddings():
-    """Initializes the GoogleGenerativeAIEmbeddings using environment variable."""
-    # Set the environment variable which the LangChain class will automatically read
-    os.environ['GEMINI_API_KEY'] = GOOGLE_API_KEY 
-    
-    # Use the specified model
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004") 
-    return embeddings
+    """
+    Initializes Google Generative AI embeddings.
+    LangChain reads the API key from the environment.
+    """
+    os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
+    return GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
 
-# --- Function to generate embeddings using LangChain and Google Gemini ---
-def generate_gemini_embedding(text):
-    """Generates an embedding vector for the given text."""
+
+def generate_embedding(text: str):
+    """
+    Generates a vector embedding for a given text.
+    """
     embeddings = initialize_embeddings()
-    embedding = embeddings.embed_query(text)
-    return embedding
+    return embeddings.embed_query(text)
 
-# --- Connect to MongoDB ---
+
+# ============================================================
+# MONGODB
+# ============================================================
+
 def connect_to_mongo():
-    """Establishes a connection to MongoDB and returns the collection."""
+    """
+    Connects to MongoDB and returns the collection.
+    """
     try:
         client = MongoClient(MONGODB_URI)
-        db = client["HealthMatch"]
-        collection = db["Health Dictionary"]
-        client.admin.command('ismaster') 
-        print("Successfully connected to MongoDB.")
-        return collection
+        client.admin.command("ping")
+        db = client[DB_NAME]
+        print("Connected to MongoDB.")
+        return db[COLLECTION_NAME]
     except Exception as e:
-        print(f"Failed to connect to MongoDB: {e}")
+        print(f"MongoDB connection failed: {e}")
         return None
 
-# =========================================================================
-# === NEW FUNCTION TO START OVER (Delete Existing Embeddings) ===
-# =========================================================================
-def clear_existing_embeddings():
+
+# ============================================================
+# MAIN LOGIC
+# ============================================================
+
+def embed_missing_documents():
     """
-    Connects to MongoDB and removes the 'embedding' field from ALL documents.
-    This effectively allows the process to start over from scratch.
+    Generates embeddings ONLY for documents that:
+    - have a non-empty 'text' field
+    - do NOT already have an 'embedding' field
     """
     collection = connect_to_mongo()
     if collection is None:
         return
-        
-    print("\n--- WARNING: STARTING OVER ---")
-    print("Clearing existing 'embedding' fields from ALL documents...")
-    
-    try:
-        # Use update_many with an empty query {} to target all documents
-        # Use $unset to remove the specified field
-        result = collection.update_many(
-            {},
-            {"$unset": {"embedding": ""}}
-        )
-        print(f"Successfully cleared 'embedding' field from {result.modified_count} documents.")
-        print("----------------------------\n")
-        
-    except Exception as e:
-        print(f"Error while clearing embeddings: {e}")
 
+    query = {
+        "text": {"$exists": True, "$ne": ""},
+        "embedding": {"$exists": False}
+    }
 
-# --- Function to resume and store embeddings in MongoDB ---
-def store_embeddings_in_mongo():
-    """
-    Retrieves and processes documents missing the 'embedding' field.
-    Since clear_existing_embeddings() was called first, this will process ALL documents.
-    """
-    collection = connect_to_mongo()
-    
-    if collection is None:
+    documents = list(collection.find(query))
+
+    if not documents:
+        print("All documents already have embeddings. Nothing to do.")
         return
 
-    print("Starting embedding generation and MongoDB update process...")
-    
-    # Query for documents where the 'embedding' field DOES NOT exist (which is all of them now)
-    resume_query = {"embedding": {"$exists": False}}
-    documents_to_process = collection.find(resume_query)
+    print(f"Found {len(documents)} documents missing embeddings.")
 
-    count = 0
-    
-    # Generate embeddings and update each document
-    for doc in documents_to_process:
-        text = doc.get('text', '') 
-        
-        if text:
-            try:
-                embedding = generate_gemini_embedding(text)
-                
-                # Update MongoDB document with the generated embedding
-                collection.update_one(
-                    {"_id": doc["_id"]},
-                    {"$set": {"embedding": embedding}}
-                )
-                count += 1
-                print(f"Updated document ID: {doc['_id']}. Total new embeddings: {count}")
-                
-            except Exception as e:
-                # Log the error and continue to the next document
-                print(f"Error generating embedding for document ID {doc.get('_id', 'N/A')}: {e}")
-        else:
-             print(f"Skipping document ID: {doc['_id']} - 'text' field is missing or empty.")
+    processed = 0
 
-    print("---")
-    print(f"Embedding generation and MongoDB update process finished. {count} documents processed in this run.")
+    for doc in documents:
+        try:
+            embedding = generate_embedding(doc["text"])
 
-# --- Trigger the embedding generation process ---
+            collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"embedding": embedding}}
+            )
+
+            processed += 1
+            print(f"Embedded document {doc['_id']} ({processed})")
+
+        except Exception as e:
+            print(f"Failed embedding document {doc['_id']}: {e}")
+
+    print(f"Done. {processed} embeddings added.")
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
 if __name__ == "__main__":
-    # 1. DELETE ALL EXISTING EMBEDDINGS
-    clear_existing_embeddings() 
-    
-    # 2. START THE EMBEDDING PROCESS FROM SCRATCH
-    store_embeddings_in_mongo()
+    embed_missing_documents()
