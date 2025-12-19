@@ -6,7 +6,7 @@ import base64
 from langfuse import Langfuse, observe
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from pymongo import MongoClient
-
+from google.genai import types
 
 
 # Fetching secrets from the Streamlit secrets file
@@ -17,7 +17,16 @@ LANGFUSE_SECRET_KEY = st.secrets["LANGFUSE"]["secret_key"]
 LANGFUSE_HOST = st.secrets["LANGFUSE"]["host"]
 
 
+# Initialize session state for chat history
+if "session_id" not in st.session_state:
+    st.session_state.session_id = os.urandom(16).hex()
 
+
+# Store the context of the last user input
+if 'last_user_input' not in st.session_state:
+    st.session_state.last_user_input = ""
+
+    
 # --- Streamlit App Page Setup ---
 st.set_page_config(
     page_title="HealthMatch - Your Personalized Health Assistant",
@@ -25,10 +34,6 @@ st.set_page_config(
     layout="centered"
 )
 
-
-# Initialize session state for chat history
-if "session_id" not in st.session_state:
-    st.session_state.session_id = os.urandom(16).hex()
 
 # Initialize Langfuse client once
 # --- Initialize Langfuse client only once ---
@@ -109,24 +114,38 @@ def search_pathology_documents(user_query, k=5):
     return results
 
 
+def analyze_url_content(url):
+    """Analyze content from a URL using URL Context tool."""
+    client = genai.Client()
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=f"Analyze and summarize the content from this URL: {url}",
+        config=types.GenerateContentConfig(
+            tools=[{"url_context": {}}]
+        )
+    )
+    return response.text
+
+
 # --- Function to reset the chat session ---
 def reset_chat():
-    """Forces the chat to be re-initialized when settings change."""    
+    """Forces the chat to be re-initialized when settings change."""
     if "langfuse_client" in st.session_state and st.session_state.langfuse_client:
-        st.session_state.langfuse_client.flush() 
+        st.session_state.langfuse_client.flush()
 
     st.session_state["chat"] = None
     st.session_state["messages"] = []
-    st.session_state["session_id"] = os.urandom(16).hex() 
+    st.session_state["session_id"] = os.urandom(16).hex()
+    st.session_state.last_user_input = ""  # Reset the previous user input
 
 
 # --- Function to generate a response using Langfuse and Google Gemini ---
 @observe()
 def generate_response_with_langfuse(langfuse_client, user_input, model_name, system_instr, user_id, api_key):
     """Generates a response using Langfuse and Google Gemini API."""
-
     try:
-        client = genai.Client(api_key=api_key)  # Initialize with Google Gemini API key
+        # Include the context and user input for a more relevant response
+        client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=model_name,
             contents=user_input,
@@ -136,8 +155,7 @@ def generate_response_with_langfuse(langfuse_client, user_input, model_name, sys
             }
         )
 
-        response_text = response.text
-        return response_text
+        return response.text
     except Exception as e:
         raise e
     
@@ -148,36 +166,55 @@ def submit_message():
     if not user_query:
         return
 
-    # 1. Store user message
+    # Store user message
     st.session_state.messages.append({
         "role": "user",
         "content": user_query
     })
 
-    try:
-        # 2. Retrieve relevant documents (RAG)
+    # Add context from previous query (if relevant)
+    context = ""
+    if st.session_state.last_user_input:
+        context = f"Previously discussed topic: {st.session_state.last_user_input}\n"
+
+    # Check if the user has provided a URL
+    if "http" in user_query.lower():  # Detect if the user provided a URL
+        context += analyze_url_content(user_query)  # Analyze the content from the URL
+    else:
+        # Process the user query as a normal question and retrieve relevant documents (RAG)
         docs = search_pathology_documents(user_query)
 
         if docs:
-            context = " ".join(doc["text"] for doc in docs)
+            context += " ".join(doc["text"] for doc in docs)
         else:
-            context = "No relevant medical information found."
+            context += "No relevant medical information found."
 
-        # 3. Generate response with Langfuse + Gemini
+    try:
+        # Limit context to the last 3 exchanges (optional)
+        max_context_length = 3
+        if len(st.session_state.conversation_context) > max_context_length:
+            st.session_state.conversation_context = st.session_state.conversation_context[-max_context_length:]
+
+        # Generate the context for the assistant
+        full_context = "\n".join([f"{entry['query']} ({', '.join(entry['entities'])})" for entry in st.session_state.conversation_context])
+
+        # Generate response with Langfuse + Gemini, adding the context
         response = generate_response_with_langfuse(
-            langfuse_client=st.session_state.langfuse_client,
-            user_input=f"Context:\n{context}\n\nQuestion:\n{user_query}",
+            user_input=f"Context:\n{full_context}\n\nQuestion:\n{user_query}",
             model_name="gemini-2.5-flash",
             system_instr=st.session_state.system_instruction,
             user_id=st.session_state.session_id,
             api_key=GOOGLE_API_KEY
         )
 
-        # 4. Store assistant message
+        # Store the assistant's message
         st.session_state.messages.append({
             "role": "assistant",
             "content": response
         })
+
+        # Save the current query as the last user input (for context in the future)
+        st.session_state.last_user_input = user_query
 
     except Exception as e:
         st.session_state.messages.append({
@@ -186,10 +223,10 @@ def submit_message():
         })
         st.error(e)
 
-    # 5. Update search history
+    # Update search history
     st.session_state.search_history.append(user_query)
 
-    # 6. Clear input and rerun
+    # Clear input and rerun
     st.session_state.chat_input = ""
 
 
