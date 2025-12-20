@@ -7,7 +7,16 @@ from langfuse import Langfuse, observe
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from pymongo import MongoClient
 from google.genai import types
+import re
+from pathlib import Path
 
+
+
+BASE_DIR = Path(__file__).parent
+ASSETS_DIR = BASE_DIR / "assets"
+
+BG_IMAGE_PATH = ASSETS_DIR / "fundo.png"
+LOGO_IMAGE_PATH = ASSETS_DIR / "logo.png"
 
 # Fetching secrets from the Streamlit secrets file
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]["key"]
@@ -21,12 +30,13 @@ LANGFUSE_HOST = st.secrets["LANGFUSE"]["host"]
 if "session_id" not in st.session_state:
     st.session_state.session_id = os.urandom(16).hex()
 
+if "last_topic" not in st.session_state:
+    st.session_state.last_topic = None
 
-# Store the context of the last user input
-if 'last_user_input' not in st.session_state:
-    st.session_state.last_user_input = ""
+if "last_topic_context" not in st.session_state:
+    st.session_state.last_topic_context = None
 
-    
+
 # --- Streamlit App Page Setup ---
 st.set_page_config(
     page_title="HealthMatch - Your Personalized Health Assistant",
@@ -60,7 +70,6 @@ if "langfuse_client" not in st.session_state:
     # Try to initialize Langfuse client if it doesn't exist
     if not initialize_langfuse():
         st.stop()  # If initialization fails, stop execution
-# If Langfuse client is initialized successfully, it will be available in session state.
 
 
 # --- Initialize LangChain with Google Generative AI Embeddings ---
@@ -75,25 +84,28 @@ def generate_gemini_embedding(text):
     embedding = embeddings.embed_query(text)
     return embedding
 
+
 # --- Connect to MongoDB ---
 def connect_to_mongo():
-    client = MongoClient(MONGODB_URI)
-    db = client["HealthMatch"]
-    collection = db["Health Dictionary"]
-    return collection
+    try:
+        client = MongoClient(MONGODB_URI)
+        db = client["HealthMatch"]
+        collection = db["Health Dictionary"]
+        return collection
+    except Exception as e:
+        st.error(f"Erro ao conectar ao MongoDB: {e}")
+        return None
+
 
 # --- Function to retrieve relevant pathologies based on user input ---
 def search_pathology_documents(user_query, k=5):
     collection = connect_to_mongo()
-
-    # 1. Embed user query
     query_embedding = generate_gemini_embedding(user_query)
 
-    # 2. MongoDB vector search
     pipeline = [
         {
             "$vectorSearch": {
-                "index": "vector_index",   # EXACT name from Atlas
+                "index": "vector_index",
                 "queryVector": query_embedding,
                 "path": "embedding",
                 "numCandidates": 100,
@@ -103,15 +115,19 @@ def search_pathology_documents(user_query, k=5):
         {
             "$project": {
                 "_id": 0,
-                "title": 1,
+                "name of pathology": 1,
                 "text": 1,
                 "score": {"$meta": "vectorSearchScore"}
             }
         }
     ]
 
-    results = list(collection.aggregate(pipeline))
-    return results
+    return list(collection.aggregate(pipeline))
+
+
+def is_valid_url(url):
+    """Check if the URL is valid."""
+    return re.match(r'http[s]?://', url) is not None
 
 
 def analyze_url_content(url):
@@ -121,7 +137,7 @@ def analyze_url_content(url):
         model="gemini-2.5-flash",
         contents=f"Analyze and summarize the content from this URL: {url}",
         config=types.GenerateContentConfig(
-            tools=[{"url_context": {}}]
+            tools=[{"url_context": {}}]  # Certifique-se de que a configuração está correta aqui.
         )
     )
     return response.text
@@ -141,10 +157,9 @@ def reset_chat():
 
 # --- Function to generate a response using Langfuse and Google Gemini ---
 @observe()
-def generate_response_with_langfuse(langfuse_client, user_input, model_name, system_instr, user_id, api_key):
+def generate_response_with_langfuse(user_input, model_name, system_instr, user_id, api_key):
     """Generates a response using Langfuse and Google Gemini API."""
     try:
-        # Include the context and user input for a more relevant response
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=model_name,
@@ -154,87 +169,103 @@ def generate_response_with_langfuse(langfuse_client, user_input, model_name, sys
                 "temperature": st.session_state.temperature
             }
         )
-
         return response.text
     except Exception as e:
         raise e
-    
+
+
+def build_system_prompt():
+    return f"""
+You are a Portuguese medical information assistant.
+
+Core principles:
+- Answer the user's question clearly, accurately and naturally.
+- Do NOT mention medical topics unless explicitly asked.
+- Maintain thematic consistency across follow-up questions.
+
+Topic handling rules:
+- If a previous medical topic exists, you MUST assume that follow-up questions
+  refer to that same topic unless the user clearly introduces a new one.
+- Do NOT switch to a different disease, condition or pathology unless explicitly requested.
+- Do NOT introduce new medical conditions on your own.
+
+Ambiguous questions:
+- If a question is ambiguous and a previous topic exists, interpret it strictly
+  in the context of that topic.
+- If no topic exists, ask a brief clarification question.
+
+Use of context:
+- Use the provided medical context only if it is relevant.
+- If the context does not contain enough information, answer based on general
+  medical knowledge about the SAME topic.
+
+Forbidden behaviours:
+- Never change the topic implicitly.
+- Never answer about a different pathology.
+- Never say phrases like "the topic is X" or "based on the previous topic".
+
+Previous medical topic:
+{st.session_state.last_topic or "None"}
+
+Relevant medical context:
+{st.session_state.last_topic_context or "None"}
+"""
+
 
 def submit_message():
     user_query = st.session_state.get("chat_input", "").strip()
-
     if not user_query:
         return
 
-    # Store user message
+    # Mostrar mensagem do utilizador
     st.session_state.messages.append({
         "role": "user",
         "content": user_query
     })
 
-    # Add context from previous query (if relevant)
-    context = ""
-    if st.session_state.last_user_input:
-        context = f"Previously discussed topic: {st.session_state.last_user_input}\n"
+    extra_context = None
 
-    # Check if the user has provided a URL
-    if "http" in user_query.lower():  # Detect if the user provided a URL
-        context += analyze_url_content(user_query)  # Analyze the content from the URL
+    # 🔗 CASO 1: o input é um URL
+    if is_valid_url(user_query):
+        extra_context = analyze_url_content(user_query)
+
     else:
-        # Process the user query as a normal question and retrieve relevant documents (RAG)
-        docs = search_pathology_documents(user_query)
+        # 🔍 CASO 2: texto normal → tentar RAG
+        docs = []
+        if len(user_query.split()) >= 5:
+            docs = search_pathology_documents(user_query)
 
-        if docs:
-            context += " ".join(doc["text"] for doc in docs)
-        else:
-            context += "No relevant medical information found."
+        if docs and docs[0]["score"] > 0.3:
+            st.session_state.last_topic = docs[0]["name of pathology"]
+            st.session_state.last_topic_context = docs[0]["text"]
 
-    try:
-        # Limit context to the last 3 exchanges (optional)
-        max_context_length = 3
-        if len(st.session_state.conversation_context) > max_context_length:
-            st.session_state.conversation_context = st.session_state.conversation_context[-max_context_length:]
+    # 🧠 Construir system prompt
+    system_prompt = build_system_prompt()
 
-        # Generate the context for the assistant
-        full_context = "\n".join([f"{entry['query']} ({', '.join(entry['entities'])})" for entry in st.session_state.conversation_context])
+    # ➕ Se houver contexto de URL, acrescentar ao prompt
+    if extra_context:
+        system_prompt += f"""
 
-        # Generate response with Langfuse + Gemini, adding the context
-        response = generate_response_with_langfuse(
-            user_input=f"Context:\n{full_context}\n\nQuestion:\n{user_query}",
-            model_name="gemini-2.5-flash",
-            system_instr=st.session_state.system_instruction,
-            user_id=st.session_state.session_id,
-            api_key=GOOGLE_API_KEY
-        )
+Additional external context (from a URL provided by the user):
+{extra_context}
+"""
 
-        # Store the assistant's message
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
+    # 🤖 Gerar resposta
+    response = generate_response_with_langfuse(
+        user_input=user_query,
+        model_name="gemini-2.5-flash",
+        system_instr=system_prompt,
+        user_id=st.session_state.session_id,
+        api_key=GOOGLE_API_KEY
+    )
 
-        # Save the current query as the last user input (for context in the future)
-        st.session_state.last_user_input = user_query
+    # Mostrar resposta
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": response
+    })
 
-    except Exception as e:
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": "An error occurred while generating the response."
-        })
-        st.error(e)
-
-    # Update search history
     st.session_state.search_history.append(user_query)
-
-    # Clear input and rerun
-    st.session_state.chat_input = ""
-
-
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "chat_input" not in st.session_state:
     st.session_state.chat_input = ""
 
 # Initialize message history
@@ -256,24 +287,29 @@ if st.session_state.search_history:
 # --- Streamlit App Page Setup ---
 st.title("Your Personalized Health Assistant")
 
-# Load and display images 
-BG_IMAGE_PATH = 'C:/Users/morai/OneDrive/Documentos/3ano/Capstone_Project/Fundo para o Streamlit.png'
-LOGO_IMAGE_PATH = 'C:/Users/morai/OneDrive/Documentos/3ano/Capstone_Project/Logo para Streamlit.png'
-
-try:
+# Background
+if BG_IMAGE_PATH.exists():
     with open(BG_IMAGE_PATH, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-    st.markdown(f"""<style>.stApp {{ background-image: url("data:image/png;base64,{encoded_string}"); background-size: cover; background-position: center; background-attachment: fixed; }}</style>""", unsafe_allow_html=True)
-except FileNotFoundError:
-    st.error(f"Background image not found at: {BG_IMAGE_PATH}. Please check the path.")
-    st.stop()
 
-try:
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background-image: url("data:image/png;base64,{encoded_string}");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+# Logo
+if LOGO_IMAGE_PATH.exists():
     logo = Image.open(LOGO_IMAGE_PATH)
     st.image(logo, use_container_width=True)
-except FileNotFoundError:
-    st.error(f"Logo image not found at: {LOGO_IMAGE_PATH}. Please check the path.")
-    st.stop()
 
 # --- FRONTEND: Display chat history ---
 for msg in st.session_state.messages:
