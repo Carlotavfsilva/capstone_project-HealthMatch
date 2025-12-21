@@ -261,7 +261,7 @@ def submit_message():
         if len(user_query.split()) >= 5:
             docs = search_pathology_documents(user_query)
 
-        if docs and docs[0]["score"] > 0.3:
+        if docs and docs[0]["score"] > 0.6 and st.session_state.last_topic is None:
             st.session_state.last_topic = docs[0]["name of pathology"]
             st.session_state.last_topic_context = docs[0]["text"]
 
