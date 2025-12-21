@@ -11,7 +11,6 @@ import re
 from pathlib import Path
 
 
-
 BASE_DIR = Path(__file__).parent
 ASSETS_DIR = BASE_DIR / "assets"
 
@@ -372,7 +371,8 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("🗑️ Clear Chat", use_container_width=True):
+
+    if st.button("Clear Chat", use_container_width=True):
         reset_chat()
         st.rerun()
 
