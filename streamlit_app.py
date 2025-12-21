@@ -363,7 +363,6 @@ st.text_input(
 
 # Sidebar settings
 with st.sidebar:
-    st.header("⚙️ Settings")
     if "temperature" not in st.session_state:
         st.session_state.temperature = 0.7
     if "system_instruction" not in st.session_state:

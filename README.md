@@ -1,6 +1,6 @@
 # HealthMatch
 
-Your Personalized Health Assistant
+Your Health, Your Care, Our Chatbot
 
 ## Overview
 
@@ -8,6 +8,9 @@ HealthMatch is an AI-powered conversational health assistant designed to help us
 
 The application allows users to describe symptoms, ask medical questions, or provide external URLs, and receive clear, contextualized responses grounded in medical knowledge. It is aimed at users who want quick and accessible medical information
 to support understanding, without replacing professional medical advice.
+
+**Target users:** General public seeking accessible medical information.
+
 
 ## Features
 
@@ -93,27 +96,26 @@ uv run streamlit run app.py
 
 ## Usage
 
-Instructions and examples for using your application. Include:
-- How to navigate the interface
-- Key workflows
-- Screenshots or GIFs demonstrating functionality (recommended for visual clarity)
+1. Open the HealthMatch web application.
+2. Enter a health-related question or describe symptoms in natural language.
+3. Optionally paste a health-related URL for contextual analysis.
+4. Receive a grounded response supported by the medical knowledge base.
+5. Ask follow-up questions in the same conversation.
 
-**Example:**
-
-1. Navigate to the main page
-2. Upload a document or enter your query
-3. Interact with the AI assistant through the chat interface
-4. View results and explore additional features
+**Example queries:**
+- "Tenho dores no peito e falta de ar, o que pode ser?"
+- "Qual a diferença entre gripe e constipação?"
+- "Resume esta página médica: [URL]"
 
 *Add screenshots or GIFs here to visually demonstrate your application's key features*
 
 ## Deployment
 
-**Live Application:** [Your deployed URL]
+**Live Application:** capstoneproject-healthmatch-paduu3ojfl7cbzj62y5kue.streamlit.app
+
+**Status:** Public and functional  
 
 **Deployment Platform:** Streamlit Cloud
-
-Instructions for deploying your own instance (if applicable).
 
 ## Project Structure
 
@@ -128,6 +130,25 @@ project-root/
 ├── requirements.txt       # Dependencies
 └── README.md              # This file
 ```
+
+## Limitations & Disclaimer
+
+- HealthMatch does not provide medical diagnoses.
+- The application does not replace professional medical advice.
+- Responses are informational and based on available documents.
+- No personal health data is stored.
+- While the chatbot supports multi-turn context, occasional inaccuracies may occur.
+
+## Future Work
+
+- Integration with hospital information.
+- Improved symptom triage logic.
+- Multilingual support.
+- Better context handling.
+
+## License
+
+This project is for academic purposes.
 
 ## Team
 
