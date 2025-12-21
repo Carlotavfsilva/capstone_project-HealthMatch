@@ -78,6 +78,7 @@ def initialize_embeddings():
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
     return embeddings
 
+
 # --- Function to generate embeddings using LangChain and Google Gemini ---
 def generate_gemini_embedding(text):
     embeddings = initialize_embeddings()
@@ -101,7 +102,6 @@ def connect_to_mongo():
 def search_pathology_documents(user_query, k=5):
     collection = connect_to_mongo()
     query_embedding = generate_gemini_embedding(user_query)
-
     pipeline = [
         {
             "$vectorSearch": {
@@ -121,7 +121,6 @@ def search_pathology_documents(user_query, k=5):
             }
         }
     ]
-
     return list(collection.aggregate(pipeline))
 
 
@@ -178,33 +177,65 @@ def build_system_prompt():
     return f"""
 You are a Portuguese medical information assistant.
 
-Core principles:
-- Answer the user's question clearly, accurately and naturally.
-- Do NOT mention medical topics unless explicitly asked.
-- Maintain thematic consistency across follow-up questions.
+Your role:
+- Provide clear, accurate and neutral medical information.
+- Help users understand health-related topics and external content they provide.
 
-Topic handling rules:
-- If a previous medical topic exists, you MUST assume that follow-up questions
-  refer to that same topic unless the user clearly introduces a new one.
-- Do NOT switch to a different disease, condition or pathology unless explicitly requested.
-- Do NOT introduce new medical conditions on your own.
+User intent rules (priority order):
+1. If the user provides a URL, assume they want the content of that URL to be analysed,
+   summarised or explained, even if no explicit question is asked.
+2. If the user asks a direct question, answer it.
+3. If the user asks a follow-up question, assume it refers to the current topic unless
+   a new topic is clearly introduced.
 
-Ambiguous questions:
-- If a question is ambiguous and a previous topic exists, interpret it strictly
-  in the context of that topic.
-- If no topic exists, ask a brief clarification question.
+External URLs:
+- The user MAY provide external URLs.
+- URL content provided in the context is trusted background information.
+- You are allowed to analyse, summarise and explain URL content.
+- Never refuse a request solely because it contains a link.
 
-Use of context:
-- Use the provided medical context only if it is relevant.
-- If the context does not contain enough information, answer based on general
-  medical knowledge about the SAME topic.
+Symptom-first rule:
+- When the user is describing symptoms, do NOT name specific diseases or conditions.
+- Discuss only general causes or categories unless the user explicitly asks about a specific condition.
+
+Topic management:
+- If a previous medical topic exists, follow-up questions refer to that topic by default.
+- Do NOT switch to a different disease or condition unless explicitly requested.
+- Do NOT introduce new medical conditions unless they are explicitly mentioned
+  in the user input or in the provided context.
+
+Topic lock rule:
+- Once a medical topic is established, you MUST stay strictly within that topic.
+- Do NOT introduce any other medical condition unless explicitly requested.
+- This rule has higher priority than providing additional examples or explanations.
+
+  Topic isolation rule:
+- Once a medical topic or condition is established, you MUST restrict the response
+  strictly to that topic.
+- Do NOT introduce, mention, reference or allude to any other diseases, conditions
+  or medical topics unless the user explicitly asks for them.
+- This includes comparisons, examples, differential diagnoses or related conditions.
+
+Comparison rule:
+- Do NOT compare the current condition with other diseases or conditions
+  unless the user explicitly asks for a comparison.
+- Do NOT mention similar or related conditions as examples.
+
+Context usage:
+- Use retrieved medical context (RAG or URL-derived) when relevant.
+- If context is insufficient, answer using general medical knowledge
+  strictly related to the current topic.
+
+Ambiguous inputs:
+- If the user input is ambiguous AND a topic exists, interpret it in that context.
+- If the user input is ambiguous AND no topic exists, ask a brief clarification question.
 
 Forbidden behaviours:
 - Never change the topic implicitly.
-- Never answer about a different pathology.
-- Never say phrases like "the topic is X" or "based on the previous topic".
+- Never introduce named diseases unless explicitly mentioned by the user.
+- Never mention internal reasoning, retrieval mechanisms or topic tracking.
 
-Previous medical topic:
+Current medical topic:
 {st.session_state.last_topic or "None"}
 
 Relevant medical context:
@@ -239,10 +270,17 @@ def submit_message():
             st.session_state.last_topic = docs[0]["name of pathology"]
             st.session_state.last_topic_context = docs[0]["text"]
 
-    # 🧠 Construir system prompt
-    system_prompt = build_system_prompt()
+        if (st.session_state.last_topic is None and not is_valid_url(user_query)):
+            st.session_state.last_topic = "symptom_description"
+            st.session_state.last_topic_context = (
+                "The user is describing symptoms. No diagnosis has been established."
+                )
 
-    # ➕ Se houver contexto de URL, acrescentar ao prompt
+    # Construir system prompt
+    system_prompt = build_system_prompt()
+    if st.session_state.last_topic == "symptom_description":
+        system_prompt += "\nYou are currently in symptom description mode."
+    # Se houver contexto de URL, acrescentar ao prompt
     if extra_context:
         system_prompt += f"""
 
@@ -331,19 +369,6 @@ with st.sidebar:
         st.session_state.temperature = 0.7
     if "system_instruction" not in st.session_state:
         st.session_state.system_instruction = "You are a helpful assistant. Be concise and friendly."
-
-    st.slider(
-        "Temperature",
-        min_value=0.0, max_value=2.0, value=st.session_state.temperature,
-        key="temperature", on_change=reset_chat,
-        help="Lower = focused, Higher = creative"
-    )
-    st.text_area(
-        "System Instruction",
-        value=st.session_state.system_instruction, height=100,
-        key="system_instruction", on_change=reset_chat,
-        help="Define how the AI should behave"
-    )
 
     st.divider()
 

@@ -6,16 +6,18 @@ Your Personalized Health Assistant
 
 HealthMatch is an AI-powered conversational health assistant designed to help users understand medical conditions and access relevant health-related information through natural language interaction.
 
-The application allows users to describe symptoms, ask medical questions, or provide external URLs, and receive clear, contextualized responses grounded in medical knowledge. It is aimed at users who want quick and accessible medical information without navigating complex healthcare websites.
+The application allows users to describe symptoms, ask medical questions, or provide external URLs, and receive clear, contextualized responses grounded in medical knowledge. It is aimed at users who want quick and accessible medical information
+to support understanding, without replacing professional medical advice.
 
 ## Features
 
-- Conversational chatbot for medical information and symptom-related questions
-- Context-aware multi-turn conversations
-- Retrieval-Augmented Generation (RAG) using a medical health dictionary
-- Semantic search with vector embeddings stored in MongoDB
-- URL content analysis using Gemini URL Context tool
-- AI observability and tracing with Langfuse
+- Conversational chatbot for medical information and symptom-related questions.
+- Context-aware multi-turn conversations.
+- Retrieval-Augmented Generation (RAG) using a medical health dictionary.
+- Semantic search with vector embeddings stored in MongoDB.
+- Strict topic isolation to prevent unintended introduction of unrelated medical conditions.
+- URL content analysis using Gemini URL Context tool.
+- AI observability and tracing with Langfuse.
 
 ## Tech Stack
 
@@ -39,12 +41,12 @@ The application allows users to describe symptoms, ask medical questions, or pro
 
 The application follows a layered architecture with clear separation of concerns:
 
-- UI Layer: Streamlit interface for user interaction and chat display
-- Service Layer: Application logic handling user input, context management, and orchestration
-- AI Layer: Gemini LLM for response generation combined with RAG for grounded answers
-- Data Layer: MongoDB storing medical documents and vector embeddings
+- UI Layer: Streamlit interface for user interaction and chat display.
+- Service Layer: Application logic handling user input, context management, and orchestration.
+- AI Layer: Gemini LLM for response generation combined with RAG for grounded answers.
+- Data Layer: MongoDB storing medical documents and vector embeddings.
 
-An architecture diagram can be found in docs/ARCHITECTURE.md.
+An architecture diagram and further explanation can be found in docs/ARCHITECTURE.md.
 
 ## Installation & Setup
 
@@ -57,8 +59,8 @@ An architecture diagram can be found in docs/ARCHITECTURE.md.
 
 1. Clone the repository:
 ```bash
-git clone [your-repo-url]
-cd [project-name]
+git clone https://github.com/Carlotavfsilva/capstone_project-HealthMatch
+cd capstone_project-HealthMatch
 ```
 
 2. Install dependencies:
@@ -66,19 +68,22 @@ cd [project-name]
 uv sync
 ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your API keys
-```
-
 **Required environment variables:**
+This application uses Streamlit Secrets for configuration.
+
+Create a `.streamlit/secrets.toml` file with the following structure:
+
 ```
-GOOGLE_API_KEY=your_gemini_api_key_here
-LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
-LANGFUSE_SECRET_KEY=your_langfuse_secret_key
-LANGFUSE_HOST=https://cloud.langfuse.com
-# Add other required API keys
+[GOOGLE_API_KEY]
+key = "your_gemini_api_key"
+
+[MONGODB_URI]
+uri = "your_mongodb_uri"
+
+[LANGFUSE]
+public_key = "your_langfuse_public_key"
+secret_key = "your_langfuse_secret_key"
+host = "https://cloud.langfuse.com"
 ```
 
 4. Run the application:
@@ -106,7 +111,7 @@ Instructions and examples for using your application. Include:
 
 **Live Application:** [Your deployed URL]
 
-**Deployment Platform:** [Streamlit Cloud / Render / Vercel / etc.]
+**Deployment Platform:** Streamlit Cloud
 
 Instructions for deploying your own instance (if applicable).
 
@@ -121,16 +126,13 @@ project-root/
 ├── docs/
 │   └── ARCHITECTURE.md    # Architecture decisions and explanations
 ├── requirements.txt       # Dependencies
-├── .env.example          # Environment variable template
-└── README.md             # This file
+└── README.md              # This file
 ```
-
-**Note:** Component-level READMEs (e.g., `services/README.md`, `tools/README.md`) are recommended if those components need detailed explanation.
 
 ## Team
 
 - Carlota Fradinho e Silva – Project Management, Documentation, UI
-- Gonçalo Morais – Research, Medical Content, UI Support
-- Gonçalo Palhoto – Technical Architecture, Backend Development
+- Gonçalo Morais – Backend Development, UI Support
+- Gonçalo Palhoto – Technical Architecture, Research, Medical Content
 
 ---
