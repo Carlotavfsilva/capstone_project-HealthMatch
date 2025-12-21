@@ -322,7 +322,7 @@ if st.session_state.search_history:
             st.rerun()
 
 # --- Streamlit App Page Setup ---
-st.title("Your Personalized Health Assistant")
+st.title("Your Health, Your Care, Our Chatbot")
 
 # Background
 if BG_IMAGE_PATH.exists():
