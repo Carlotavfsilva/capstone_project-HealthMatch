@@ -247,20 +247,24 @@ def submit_message():
     if not user_query:
         return
 
-    # Mostrar mensagem do utilizador
+    # Store user message
     st.session_state.messages.append({
         "role": "user",
         "content": user_query
     })
 
     extra_context = None
+    is_url_input = is_valid_url(user_query)
 
-    # 🔗 CASO 1: o input é um URL
-    if is_valid_url(user_query):
-        extra_context = analyze_url_content(user_query)
+    # CASE 1: URL provided
+    if is_url_input:
+        try:
+            extra_context = analyze_url_content(user_query)
+        except Exception:
+            extra_context = None
 
+    # CASE 2: Normal text → RAG
     else:
-        # 🔍 CASO 2: texto normal → tentar RAG
         docs = []
         if len(user_query.split()) >= 5:
             docs = search_pathology_documents(user_query)
@@ -269,25 +273,34 @@ def submit_message():
             st.session_state.last_topic = docs[0]["name of pathology"]
             st.session_state.last_topic_context = docs[0]["text"]
 
-        if (st.session_state.last_topic is None and not is_valid_url(user_query)):
+        if st.session_state.last_topic is None:
             st.session_state.last_topic = "symptom_description"
             st.session_state.last_topic_context = (
                 "The user is describing symptoms. No diagnosis has been established."
-                )
+            )
 
-    # Construir system prompt
+    # Build system prompt
     system_prompt = build_system_prompt()
+
     if st.session_state.last_topic == "symptom_description":
         system_prompt += "\nYou are currently in symptom description mode."
-    # Se houver contexto de URL, acrescentar ao prompt
-    if extra_context:
-        system_prompt += f"""
+
+    # URL context handling with safe fallback
+    if is_url_input:
+        if extra_context:
+            system_prompt += f"""
 
 Additional external context (from a URL provided by the user):
 {extra_context}
 """
+        else:
+            system_prompt += """
 
-    # 🤖 Gerar resposta
+The URL content could not be accessed directly.
+Provide a general explanation of the topic mentioned in the user's message.
+"""
+
+    # Generate response
     response = generate_response_with_langfuse(
         user_input=user_query,
         model_name="gemini-2.5-flash",
@@ -296,7 +309,7 @@ Additional external context (from a URL provided by the user):
         api_key=GOOGLE_API_KEY
     )
 
-    # Mostrar resposta
+    # Store assistant response
     st.session_state.messages.append({
         "role": "assistant",
         "content": response
@@ -304,6 +317,7 @@ Additional external context (from a URL provided by the user):
 
     st.session_state.search_history.append(user_query)
     st.session_state.chat_input = ""
+    
 
 # Initialize message history
 if "messages" not in st.session_state:
