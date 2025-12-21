@@ -130,7 +130,7 @@ def is_valid_url(url):
 
 def analyze_url_content(url):
     """Analyze content from a URL using URL Context tool."""
-    client = genai.Client()
+    client = genai.Client(api_key=GOOGLE_API_KEY)
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=f"Analyze and summarize the content from this URL: {url}",
