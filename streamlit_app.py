@@ -1,14 +1,20 @@
+# --- Base ---
 import streamlit as st
 from PIL import Image
-from google import genai
 import os
 import base64
-from langfuse import Langfuse, observe
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from pymongo import MongoClient
-from google.genai import types
-import re
 from pathlib import Path
+# --- Services ---
+from services.rag import search_pathology_documents
+from services.URL_analysis import analyze_url_content
+from services.llm import generate_response
+# --- Utils ---
+from utils.URL_validation import is_valid_url
+# --- Prompts ---
+from prompts.system_prompt import build_system_prompt
+# --- Langfuse ---
+from observability.langfuse_client import init_langfuse    
+
 
 
 BASE_DIR = Path(__file__).parent
@@ -19,7 +25,6 @@ LOGO_IMAGE_PATH = ASSETS_DIR / "logo.png"
 
 # Fetching secrets from the Streamlit secrets file
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]["key"]
-MONGODB_URI = st.secrets["MONGODB_URI"]["uri"]
 LANGFUSE_PUBLIC_KEY = st.secrets["LANGFUSE"]["public_key"]
 LANGFUSE_SECRET_KEY = st.secrets["LANGFUSE"]["secret_key"]
 LANGFUSE_HOST = st.secrets["LANGFUSE"]["host"]
@@ -44,101 +49,13 @@ st.set_page_config(
 )
 
 
-# Initialize Langfuse client once
-# --- Initialize Langfuse client only once ---
-def initialize_langfuse():
-    """Initializes the Langfuse client."""
-    try:
-        langfuse_client = Langfuse(
-            public_key=LANGFUSE_PUBLIC_KEY,
-            secret_key=LANGFUSE_SECRET_KEY,
-            host=LANGFUSE_HOST
-        )
-        st.session_state.langfuse_client = langfuse_client
-        return True
-    except KeyError as e:
-        st.error(f"Langfuse key not found in secrets: {e}. Please check `.streamlit/secrets.toml`.")
-        return False
-    except Exception as e:
-        st.error(f"Error initializing Langfuse client: {e}")
-        return False
-    
-
 # --- Check if Langfuse client is already initialized ---
 if "langfuse_client" not in st.session_state:
-    # Try to initialize Langfuse client if it doesn't exist
-    if not initialize_langfuse():
-        st.stop()  # If initialization fails, stop execution
-
-
-# --- Initialize LangChain with Google Generative AI Embeddings ---
-def initialize_embeddings():
-    os.environ['GEMINI_API_KEY'] = GOOGLE_API_KEY
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-    return embeddings
-
-
-# --- Function to generate embeddings using LangChain and Google Gemini ---
-def generate_gemini_embedding(text):
-    embeddings = initialize_embeddings()
-    embedding = embeddings.embed_query(text)
-    return embedding
-
-
-# --- Connect to MongoDB ---
-def connect_to_mongo():
-    try:
-        client = MongoClient(MONGODB_URI)
-        db = client["HealthMatch"]
-        collection = db["Health Dictionary"]
-        return collection
-    except Exception as e:
-        st.error(f"Erro ao conectar ao MongoDB: {e}")
-        return None
-
-
-# --- Function to retrieve relevant pathologies based on user input ---
-def search_pathology_documents(user_query, k=5):
-    collection = connect_to_mongo()
-    query_embedding = generate_gemini_embedding(user_query)
-    pipeline = [
-        {
-            "$vectorSearch": {
-                "index": "vector_index",
-                "queryVector": query_embedding,
-                "path": "embedding",
-                "numCandidates": 100,
-                "limit": k
-            }
-        },
-        {
-            "$project": {
-                "_id": 0,
-                "name of pathology": 1,
-                "text": 1,
-                "score": {"$meta": "vectorSearchScore"}
-            }
-        }
-    ]
-    return list(collection.aggregate(pipeline))
-
-
-def is_valid_url(url):
-    """Check if the URL is valid."""
-    return re.match(r'http[s]?://', url) is not None
-
-
-def analyze_url_content(url):
-    """Analyze content from a URL using URL Context tool."""
-    client = genai.Client(api_key=GOOGLE_API_KEY)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=f"Analyze and summarize the content from this URL: {url}",
-        config=types.GenerateContentConfig(
-            tools=[{"url_context": {}}]  # Certifique-se de que a configuração está correta aqui.
-        )
+    st.session_state.langfuse_client = init_langfuse(
+        LANGFUSE_PUBLIC_KEY,
+        LANGFUSE_SECRET_KEY,
+        LANGFUSE_HOST
     )
-    return response.text
 
 
 # --- Function to reset the chat session ---
@@ -151,97 +68,6 @@ def reset_chat():
     st.session_state["messages"] = []
     st.session_state["session_id"] = os.urandom(16).hex()
     st.session_state.last_user_input = ""  # Reset the previous user input
-
-
-# --- Function to generate a response using Langfuse and Google Gemini ---
-@observe()
-def generate_response_with_langfuse(user_input, model_name, system_instr, user_id, api_key):
-    """Generates a response using Langfuse and Google Gemini API."""
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=model_name,
-            contents=user_input,
-            config={
-                "system_instruction": system_instr,
-                "temperature": st.session_state.temperature
-            }
-        )
-        return response.text
-    except Exception as e:
-        raise e
-
-
-def build_system_prompt():
-    return f"""
-You are a Portuguese medical information assistant.
-
-PRIMARY OBJECTIVE:
-Provide clear, accurate and neutral medical information.
-Maintain strict topic consistency throughout the conversation.
-
-────────────────────────
-TOPIC CONTROL (HIGHEST PRIORITY)
-────────────────────────
-- A medical topic may already be established.
-- If a topic exists, ALL responses MUST remain strictly within that topic.
-- You MUST NOT introduce, mention or reference any other disease, condition
-  or medical topic unless the user explicitly asks to change the topic.
-- This rule overrides all others.
-
-Current locked medical topic:
-{st.session_state.last_topic or "No topic has been established yet"}
-
-────────────────────────
-USER INTENT HANDLING
-────────────────────────
-1. If the user provides a URL, they want its content analysed or explained.
-2. If the user asks a direct question, answer it.
-3. If the user asks a follow-up question, assume it refers to the current topic.
-
-────────────────────────
-SYMPTOM HANDLING
-────────────────────────
-- If the user is describing symptoms AND no diagnosis was explicitly named:
-  • Do NOT name diseases.
-  • Discuss only general causes or symptom categories.
-- Only name a disease if the user explicitly names it.
-
-────────────────────────
-CONTEXT USAGE
-────────────────────────
-- Use provided medical context (RAG or URL-derived) when available.
-- If context is insufficient:
-  • Stay within the current topic.
-  • Do NOT expand to related or similar conditions.
-
-Relevant medical context:
-{st.session_state.last_topic_context or "No additional context available"}
-
-────────────────────────
-AMBIGUITY HANDLING
-────────────────────────
-- If the input is ambiguous AND a topic exists, interpret it within that topic.
-- If the input is ambiguous AND no topic exists, ask a brief clarification question.
-
-────────────────────────
-FORBIDDEN BEHAVIOURS
-────────────────────────
-- Do NOT change topic implicitly.
-- Do NOT compare conditions unless explicitly asked.
-- Do NOT introduce examples involving other diseases.
-- Do NOT explain internal reasoning or system behaviour.
-
-────────────────────────────────
-GENERAL PREVENTIVE CARE (ALLOWED)
-────────────────────────────────
-- If the user asks about general health care, prevention, lifestyle
-  or well-being (e.g. pregnancy, nutrition, daily habits),
-  you MAY provide general, high-level guidance.
-- Do NOT require symptom descriptions for general care questions.
-- Do NOT provide diagnoses, prescriptions or dosages.
-- Frame advice as general recommendations, not medical instructions.
-"""
 
 
 def submit_message():
@@ -271,7 +97,7 @@ def submit_message():
         if len(user_query.split()) >= 5:
             docs = search_pathology_documents(user_query)
 
-        if docs and docs[0]["score"] > 0.6 and st.session_state.last_topic is None:
+        if (docs and docs[0]["score"] > 0.6 and st.session_state.last_topic in (None, "symptom_description")):
             st.session_state.last_topic = docs[0]["name of pathology"]
             st.session_state.last_topic_context = docs[0]["text"]
 
@@ -282,10 +108,10 @@ def submit_message():
             )
 
     # Build system prompt
-    system_prompt = build_system_prompt()
-
-    if st.session_state.last_topic == "symptom_description":
-        system_prompt += "\nYou are currently in symptom description mode."
+    system_prompt = build_system_prompt(
+        st.session_state.last_topic,
+        st.session_state.last_topic_context
+    )
 
     # URL context handling with safe fallback
     if is_url_input:
@@ -303,11 +129,10 @@ Provide a general explanation of the topic mentioned in the user's message.
 """
 
     # Generate response
-    response = generate_response_with_langfuse(
+    response = generate_response(
         user_input=user_query,
-        model_name="gemini-2.5-flash",
-        system_instr=system_prompt,
-        user_id=st.session_state.session_id,
+        system_prompt=system_prompt,
+        temperature=st.session_state.temperature,
         api_key=GOOGLE_API_KEY
     )
 
