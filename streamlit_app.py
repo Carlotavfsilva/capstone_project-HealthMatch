@@ -234,7 +234,7 @@ with st.sidebar:
 
 # Display Introductory Message
 st.markdown("""
-    👋 *Welcome to your Personalized Health Assistant!*
-    This chatbot can help you find medical services, doctor recommendations, and much more!
+    👋 **Welcome to Your Personalized Health Assistant!**
+    This chatbot can help you find medical services, doctor recommendations, and more!
 """)
 st.divider()
