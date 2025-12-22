@@ -100,12 +100,10 @@ def submit_message():
 
     # Agora sim, construir o system prompt
     system_prompt = build_system_prompt(
-        topic="url" if is_url else st.session_state.last_topic,
-        context=(
-            "The user provided a URL. Use it only as contextual reference."
-            if is_url
-            else st.session_state.last_topic_context
-        )
+        "url" if is_url else st.session_state.last_topic,
+        "The user provided a URL. Use it only as contextual reference."
+        if is_url
+        else st.session_state.last_topic_context
     )
 
     response = generate_response(
