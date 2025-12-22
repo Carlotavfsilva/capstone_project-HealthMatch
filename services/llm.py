@@ -10,22 +10,34 @@ def generate_response(
 ):
     client = genai.Client(api_key=api_key)
 
+    # 1️⃣ Tentar com URL tool (se aplicável)
     if use_url_tool:
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=temperature,
-            tools=[{"url_context": {}}]
-        )
-    else:
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=temperature
-        )
+        try:
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=temperature,
+                tools=[{"url_context": {}}]
+            )
+
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=user_input,
+                config=config
+            )
+            return response.text
+
+        except Exception:
+            pass  # cai para fallback silencioso
+
+    # 2️⃣ Fallback SEM tool (sempre funciona)
+    fallback_config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=temperature
+    )
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=user_input,
-        config=config
+        config=fallback_config
     )
-
     return response.text
