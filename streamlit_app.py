@@ -81,11 +81,16 @@ def submit_message():
         "content": user_query
     })
     
-    is_url_input = is_valid_url(user_query)
+    is_url_input = (
+        is_valid_url(user_query)
+        and user_query.strip().startswith("http")
+        and len(user_query.strip().split()) == 1
+    )
+    
     if is_url_input:
         st.session_state.last_topic = None
         st.session_state.last_topic_context = None
-        
+
     # CASE 1: URL → não faz RAG
     if not is_url_input:
         docs = []
