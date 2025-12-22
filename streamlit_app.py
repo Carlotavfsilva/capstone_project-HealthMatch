@@ -395,6 +395,18 @@ with st.sidebar:
         st.session_state.search_history = []
         st.success("Search history cleared!")
 
+    if st.button("🔄 Change Topic", use_container_width=True):
+        st.session_state.last_topic = None
+        st.session_state.last_topic_context = None
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": (
+                "Ok 😊 Vamos mudar de tema.\n\n"
+                "Sobre que assunto de saúde gostarias de falar agora?"
+            )
+        })
+        st.rerun()
 
 # --- Display Introductory Message ---
 st.markdown("""
