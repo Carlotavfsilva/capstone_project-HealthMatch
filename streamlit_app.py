@@ -75,29 +75,20 @@ def submit_message():
     if not user_query:
         return
 
-    # Store user message
     st.session_state.messages.append({
         "role": "user",
         "content": user_query
     })
-    
-    is_url_input = (
-        is_valid_url(user_query)
-        and user_query.strip().startswith("http")
-        and len(user_query.strip().split()) == 1
-    )
-    
-    if is_url_input:
-        st.session_state.last_topic = None
-        st.session_state.last_topic_context = None
 
-    # CASE 1: URL → não faz RAG
-    if not is_url_input:
+    is_url = is_valid_url(user_query)
+
+    # Só faz RAG se NÃO for URL
+    if not is_url:
         docs = []
         if len(user_query.split()) >= 5:
             docs = search_pathology_documents(user_query)
 
-        if (docs and docs[0]["score"] > 0.6 and st.session_state.last_topic in (None, "symptom_description")):
+        if docs and docs[0]["score"] > 0.6 and st.session_state.last_topic in (None, "symptom_description"):
             st.session_state.last_topic = docs[0]["name of pathology"]
             st.session_state.last_topic_context = docs[0]["text"]
 
@@ -107,22 +98,23 @@ def submit_message():
                 "The user is describing symptoms. No diagnosis has been established."
             )
 
-    # Build system prompt
+    # Agora sim, construir o system prompt
     system_prompt = build_system_prompt(
-        st.session_state.last_topic,
-        st.session_state.last_topic_context
+        topic="url" if is_url else st.session_state.last_topic,
+        context=(
+            "The user provided a URL. Use it only as contextual reference."
+            if is_url
+            else st.session_state.last_topic_context
+        )
     )
 
-    # Generate response
     response = generate_response(
         user_input=user_query,
         system_prompt=system_prompt,
         temperature=st.session_state.temperature,
-        api_key=GOOGLE_API_KEY,
-        use_url_tool=is_url_input
+        api_key=GOOGLE_API_KEY
     )
 
-    # Store assistant response
     st.session_state.messages.append({
         "role": "assistant",
         "content": response
