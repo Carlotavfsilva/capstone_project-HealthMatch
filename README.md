@@ -9,6 +9,9 @@ HealthMatch is an AI-powered conversational health assistant designed to help us
 The application allows users to describe symptoms, ask medical questions, or provide external URLs, and receive clear, contextualized responses grounded in medical knowledge. It is aimed at users who want quick and accessible medical information
 to support understanding, without replacing professional medical advice.
 
+The project focuses on safe conversational design in healthcare, with particular
+attention to topic consistency, controlled context switching and user experience.
+
 **Target users:** General public seeking accessible medical information.
 
 
@@ -107,13 +110,25 @@ uv run streamlit run app.py
 - "Qual a diferença entre gripe e constipação?"
 - "Resume esta página médica: [URL]"
 
-*Add screenshots or GIFs here to visually demonstrate your application's key features*
+## Example Conversations
+
+The following screenshots illustrate the chatbot’s behaviour in real usage scenarios,
+including topic consistency, preventive care guidance and user-friendly interaction.
+
+### Friendly greeting
+![Chat greeting](screenshots/screenshot_1.png)
+
+### General preventive care (pregnancy)
+![Pregnancy advice](screenshots/screenshot_2.png)
+
+### Topic consistency and self-care
+![Topic lock example](screenshots/screenshot_3.png)
 
 ## Deployment
 
-**Live Application:** capstoneproject-healthmatch-paduu3ojfl7cbzj62y5kue.streamlit.app
+**Live Application:** https://capstoneproject-healthmatch-paduu3ojfl7cbzj62y5kue.streamlit.app
 
-**Status:** Public and functional  
+**Status:** The application is deployed on Streamlit Cloud and can be accessed publicly without authentication.  
 
 **Deployment Platform:** Streamlit Cloud
 
@@ -137,8 +152,9 @@ project-root/
 - The application does not replace professional medical advice.
 - Responses are informational and based on available documents.
 - No personal health data is stored.
-- While the chatbot supports multi-turn context, occasional inaccuracies may occur.
-
+- The system prioritizes safety and topic consistency, which may occasionally result
+  in conservative or high-level responses.
+  
 ## Future Work
 
 - Integration with hospital information.
