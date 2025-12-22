@@ -6,7 +6,6 @@ import base64
 from pathlib import Path
 # --- Services ---
 from services.rag import search_pathology_documents
-from services.URL_analysis import analyze_url_content
 from services.llm import generate_response
 # --- Utils ---
 from utils.URL_validation import is_valid_url
@@ -81,19 +80,14 @@ def submit_message():
         "role": "user",
         "content": user_query
     })
-
-    extra_context = None
+    
     is_url_input = is_valid_url(user_query)
-
-    # CASE 1: URL provided
     if is_url_input:
-        try:
-            extra_context = analyze_url_content(user_query)
-        except Exception:
-            extra_context = None
-
-    # CASE 2: Normal text → RAG
-    else:
+        st.session_state.last_topic = None
+        st.session_state.last_topic_context = None
+        
+    # CASE 1: URL → não faz RAG
+    if not is_url_input:
         docs = []
         if len(user_query.split()) >= 5:
             docs = search_pathology_documents(user_query)
@@ -114,27 +108,13 @@ def submit_message():
         st.session_state.last_topic_context
     )
 
-    # URL context handling with safe fallback
-    if is_url_input:
-        if extra_context:
-            system_prompt += f"""
-
-Additional external context (from a URL provided by the user):
-{extra_context}
-"""
-        else:
-            system_prompt += """
-
-The URL content could not be accessed directly.
-Provide a general explanation of the topic mentioned in the user's message.
-"""
-
     # Generate response
     response = generate_response(
         user_input=user_query,
         system_prompt=system_prompt,
         temperature=st.session_state.temperature,
-        api_key=GOOGLE_API_KEY
+        api_key=GOOGLE_API_KEY,
+        use_url_tool=is_url_input
     )
 
     # Store assistant response
