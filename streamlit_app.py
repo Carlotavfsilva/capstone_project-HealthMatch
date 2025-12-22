@@ -1,24 +1,36 @@
+# -----------------------------------------------------------------------
+# Importing the necessary libraries 
+# -----------------------------------------------------------------------
+
 # --- Base ---
 import streamlit as st
 from PIL import Image
 import os
 import base64
 from pathlib import Path
+
 # --- Services ---
 from services.rag import search_pathology_documents
 from services.llm import generate_response
+
 # --- Utils ---
 from utils.URL_validation import is_valid_url
+
 # --- Prompts ---
 from prompts.system_prompt import build_system_prompt
+
 # --- Langfuse ---
 from observability.langfuse_client import init_langfuse    
 
 
+# -----------------------------------------------------------------------
+# Initial Setup and Configurations
+# -----------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).parent
 ASSETS_DIR = BASE_DIR / "assets"
 
+# Paths to assets the images
 BG_IMAGE_PATH = ASSETS_DIR / "fundo.png"
 LOGO_IMAGE_PATH = ASSETS_DIR / "logo.png"
 
@@ -27,7 +39,6 @@ GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]["key"]
 LANGFUSE_PUBLIC_KEY = st.secrets["LANGFUSE"]["public_key"]
 LANGFUSE_SECRET_KEY = st.secrets["LANGFUSE"]["secret_key"]
 LANGFUSE_HOST = st.secrets["LANGFUSE"]["host"]
-
 
 # Initialize session state for chat history
 if "session_id" not in st.session_state:
@@ -40,24 +51,34 @@ if "last_topic_context" not in st.session_state:
     st.session_state.last_topic_context = None
 
 
-# --- Streamlit App Page Setup ---
+# -----------------------------------------------------------------------
+# Streamlit Page Configuration
+# -----------------------------------------------------------------------
+
+# Streamlit App Page Setup 
 st.set_page_config(
     page_title="HealthMatch - Your Personalized Health Assistant",
     page_icon="🤖",
-    layout="centered"
-)
+    layout="centered")
 
 
-# --- Check if Langfuse client is already initialized ---
+# -----------------------------------------------------------------------
+# Langfuse Client Initialization
+# -----------------------------------------------------------------------
+
+# Check if Langfuse client is already initialized
 if "langfuse_client" not in st.session_state:
     st.session_state.langfuse_client = init_langfuse(
         LANGFUSE_PUBLIC_KEY,
         LANGFUSE_SECRET_KEY,
-        LANGFUSE_HOST
-    )
+        LANGFUSE_HOST)
 
 
-# --- Function to reset the chat session ---
+# -----------------------------------------------------------------------
+# Session State and Chat Management Functions
+# -----------------------------------------------------------------------
+
+# Function to reset the chat session 
 def reset_chat():
     """Forces the chat to be re-initialized when settings change."""
     if "langfuse_client" in st.session_state and st.session_state.langfuse_client:
@@ -69,7 +90,6 @@ def reset_chat():
     st.session_state.last_user_input = ""  # Reset the previous user input
 
 
-# --- 
 def submit_message():
     user_query = st.session_state.get("chat_input", "").strip()
     if not user_query:
@@ -98,7 +118,6 @@ def submit_message():
                 "The user is describing symptoms. No diagnosis has been established."
             )
 
-    # Agora sim, construir o system prompt
     system_prompt = build_system_prompt(
         None if is_url else st.session_state.last_topic,
         "The user provided a URL. Use it only as contextual reference."
@@ -122,6 +141,10 @@ def submit_message():
     st.session_state.chat_input = ""
 
 
+# -----------------------------------------------------------------------
+# Chat History and User Interface
+# -----------------------------------------------------------------------
+
 # Initialize message history
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -130,7 +153,7 @@ if "messages" not in st.session_state:
 if "search_history" not in st.session_state:
     st.session_state.search_history = []
 
-# --- Search History ---
+# Search History 
 st.sidebar.header("🕒 Search History")
 if st.session_state.search_history:
     for i, search in enumerate(st.session_state.search_history):
@@ -138,7 +161,7 @@ if st.session_state.search_history:
             st.session_state["chat_input"] = search
             st.rerun()
 
-# --- Streamlit App Page Setup ---
+# Streamlit App Page Setup 
 st.title("Your Health, Your Care, Our Chatbot")
 
 # Background
@@ -203,15 +226,15 @@ with st.sidebar:
         st.session_state.messages.append({
             "role": "assistant",
             "content": (
-                "Ok 😊 Vamos mudar de tema.\n\n"
+                "Ok 😊! Vamos mudar de tema.\n\n"
                 "Sobre que assunto de saúde gostarias de falar agora?"
             )
         })
         st.rerun()
 
-# --- Display Introductory Message ---
+# Display Introductory Message
 st.markdown("""
-    👋 **Welcome to Your Personalized Health Assistant!**
-    This chatbot can help you find medical services, doctor recommendations, and more!
+    👋 *Welcome to your Personalized Health Assistant!*
+    This chatbot can help you find medical services, doctor recommendations, and much more!
 """)
 st.divider()
