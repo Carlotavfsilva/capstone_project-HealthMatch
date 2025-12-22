@@ -231,6 +231,16 @@ FORBIDDEN BEHAVIOURS
 - Do NOT compare conditions unless explicitly asked.
 - Do NOT introduce examples involving other diseases.
 - Do NOT explain internal reasoning or system behaviour.
+
+────────────────────────────────
+GENERAL PREVENTIVE CARE (ALLOWED)
+────────────────────────────────
+- If the user asks about general health care, prevention, lifestyle
+  or well-being (e.g. pregnancy, nutrition, daily habits),
+  you MAY provide general, high-level guidance.
+- Do NOT require symptom descriptions for general care questions.
+- Do NOT provide diagnoses, prescriptions or dosages.
+- Frame advice as general recommendations, not medical instructions.
 """
 
 
@@ -384,6 +394,7 @@ with st.sidebar:
     if st.button("🗑️ Clear Search History", use_container_width=True):
         st.session_state.search_history = []
         st.success("Search history cleared!")
+
 
 # --- Display Introductory Message ---
 st.markdown("""
