@@ -70,6 +70,7 @@ def reset_chat():
     st.session_state.last_user_input = ""  # Reset the previous user input
 
 
+# --- 
 def submit_message():
     user_query = st.session_state.get("chat_input", "").strip()
     if not user_query:

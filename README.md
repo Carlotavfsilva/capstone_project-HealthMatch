@@ -153,7 +153,7 @@ project-root/
 - Responses are informational and based on available documents.
 - No personal health data is stored.
 - The system prioritizes safety and topic consistency, which may occasionally result
-  in conservative or high-level responses.
+  in conservative or high-level responses. Because of this, the 'Change Topic button' was created.
   
 ## Future Work
 
